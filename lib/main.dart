@@ -47,6 +47,7 @@ class LocationTrackerScreen extends StatefulWidget {
 
 class _LocationTrackerScreenState extends State<LocationTrackerScreen> {
   bool _isTracking = false;
+  Timer? _locationUpdateTimer;
   List<Map<String, dynamic>> _locations = [];
 
   // Fetch locations
@@ -69,6 +70,10 @@ class _LocationTrackerScreenState extends State<LocationTrackerScreen> {
         networkType: NetworkType.connected,
       ),
     );
+
+    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _updateLocation();
+    });
 
     _updateLocation();
   }
