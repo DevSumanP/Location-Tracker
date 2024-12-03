@@ -1,99 +1,163 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:location_tracker/database_service.dart';
-import 'package:location_tracker/location_service.dart';
-import 'package:workmanager/workmanager.dart';
 
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+
+import 'package:location_tracker/firebase_options.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  await initializeService();
+  runApp(MyApp());
+}
+
+Future<void> initializeService() async {
+  final service = FlutterBackgroundService();
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: false,
+      isForegroundMode: true,
+      initialNotificationTitle: 'Location Service',
+      initialNotificationContent: 'Tracking location',
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+Future<void> onStart(ServiceInstance service) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Ensure service runs in foreground on Android
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+
+  // Stop service when app is closed
+  service.on('stopService').listen((event) async {
+    await service.stopSelf();
+  });
+
+  // Location tracking logic
+  Timer.periodic(const Duration(seconds: 5), (timer) async {
     try {
-      await Firebase.initializeApp();
-      final position = await LocationService.getCurrentLocation();
-      await DatabaseService.sendLocation(position);
-      return Future.value(true);
+      // Clear previous locations
+      await FirebaseFirestore.instance
+          .collection('locations')
+          .get()
+          .then((snapshot) {
+        for (DocumentSnapshot doc in snapshot.docs) {
+          doc.reference.delete();
+        }
+      });
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition();
+
+      // Update notification
+      if (service is AndroidServiceInstance) {
+        service.setForegroundNotificationInfo(
+          title: 'Location Tracking',
+          content: 'Current: ${position.latitude}, ${position.longitude}',
+        );
+      }
+
+      // Save location to Firestore
+      await FirebaseFirestore.instance.collection('locations').add({
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
-      print('Background execution error: $e');
-      return Future.value(false);
+      print('Location tracking error: $e');
     }
   });
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  Workmanager().initialize(callbackDispatcher, isInDebugMode: true);
-  runApp(const MyApp());
-}
-
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: LocationTrackerScreen(),
+    return MaterialApp(
+      title: 'Location Tracker',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: LocationTrackerPage(),
     );
   }
 }
 
-class LocationTrackerScreen extends StatefulWidget {
-  const LocationTrackerScreen({super.key});
+class LocationTrackerPage extends StatefulWidget {
+  @override
+  _LocationTrackerPageState createState() => _LocationTrackerPageState();
+}
+
+class _LocationTrackerPageState extends State<LocationTrackerPage>
+    with WidgetsBindingObserver {
+  bool isTracking = false;
+  final service = FlutterBackgroundService();
 
   @override
-  // ignore: library_private_types_in_public_api
-  _LocationTrackerScreenState createState() => _LocationTrackerScreenState();
-}
-
-class _LocationTrackerScreenState extends State<LocationTrackerScreen> {
-  bool _isTracking = false;
-  Timer? _locationUpdateTimer;
-  List<Map<String, dynamic>> _locations = [];
-
-  // Fetch locations
-  Stream<List<Map<String, dynamic>>> _fetchLocations() {
-    return DatabaseService.fetchLocations();
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
   }
 
-  // Start tracking
-  void _startTracking() {
-    setState(() {
-      _isTracking = true;
-    });
-
-    // Register periodic background task
-    Workmanager().registerPeriodicTask(
-      "locationTracking",
-      "locationTask",
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-      ),
-    );
-
-    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _updateLocation();
-    });
-
-    _updateLocation();
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    stopLocationTracking();
+    super.dispose();
   }
 
-  void _stopTracking() {
-    setState(() {
-      _isTracking = false;
-    });
-    Workmanager().cancelAll();
-  }
-
-  void _updateLocation() async {
-    try {
-      final position = await LocationService.getCurrentLocation();
-      await DatabaseService.sendLocation(position);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating location: $e')),
-      );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      startLocationTracking();
     }
+  }
+
+  void toggleTracking() async {
+    if (!isTracking) {
+      await startLocationTracking();
+    } else {
+      stopLocationTracking();
+    }
+  }
+
+  Future<void> startLocationTracking() async {
+    await Geolocator.requestPermission();
+    await service.startService();
+    setState(() {
+      isTracking = true;
+    });
+  }
+
+  void stopLocationTracking() {
+    service.invoke('stopService');
+    setState(() {
+      isTracking = false;
+    });
   }
 
   @override
@@ -104,56 +168,41 @@ class _LocationTrackerScreenState extends State<LocationTrackerScreen> {
         centerTitle: true,
         leading: const Icon(Icons.arrow_back_outlined),
       ),
-      body: Column(
-        children: [
-          ElevatedButton(
-            onPressed: _isTracking ? _stopTracking : _startTracking,
-            child: Text(_isTracking ? 'Stop Tracking' : 'Start Tracking'),
-          ),
-          if (_isTracking)
-            ElevatedButton(
-              onPressed: _updateLocation,
-              child: const Text('Update Location Now'),
-            ),
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _fetchLocations(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('locations')
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return Center(child: CircularProgressIndicator());
+          }
 
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('No locations found'));
-                }
-
-                return ListView.builder(
-                  itemCount: snapshot.data!.length,
-                  itemBuilder: (context, index) {
-                    final location = snapshot.data![index];
-                    return Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ClipRRect(
-                        child: ListTile(
-                          title: Text(
-                            'Lat: ${location['latitude']}, Lon: ${location['longitude']}',
-                          ),
-                          subtitle: Text(
-                            'Time: ${location['timestamp'].toDate()}',
-                          ),
-                          tileColor: const Color.fromARGB(255, 229, 229, 229),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+          return ListView.builder(
+            itemCount: snapshot.data!.docs.length,
+            itemBuilder: (context, index) {
+              var doc = snapshot.data!.docs[index];
+              Timestamp timestamp = doc['timestamp'] ?? Timestamp.now();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0),
+                child: ListTile(
+                  tileColor: const Color.fromARGB(255, 221, 221, 221),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0)),
+                  title: Text(
+                    'Lat: ${doc['latitude']}, Long: ${doc['longitude']}',
+                  ),
+                  subtitle: Text(timestamp.toDate().toString()),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: toggleTracking,
+        backgroundColor: isTracking ? Colors.red : Colors.green,
+        child: Icon(isTracking ? Icons.stop : Icons.play_arrow),
       ),
     );
   }
