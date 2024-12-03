@@ -1,28 +1,28 @@
-# Flutter Location Tracker
+# 📍Flutter Location Tracker
 
-## Features
+## 🌟Features
 - Real-time location tracking
 - Background service support
 - Firebase Firestore integration
 
-## Prerequisites
+## 🔧 Tech Stackk
 - Flutter SDK
 - Firebase project
 - Android/iOS device
 
-## Setup
+## 🚀 Getting Started
 1. Clone repository
 2. Run `flutter pub get`
 3. Configure Firebase
 4. Run `flutter run`
 
-## Dependencies
+## 📦 Dependencies
 - flutter_background_service
 - cloud_firestore
 - geolocator
 - firebase_core
 
-## Usage
+## 📱 Usage
 - Tap play button to start tracking
 - App continues tracking location
   
