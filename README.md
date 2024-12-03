@@ -1,16 +1,33 @@
-# location_tracker
+# Flutter Location Tracker
 
-A new Flutter project.
+## Features
+- Real-time location tracking
+- Background service support
+- Firebase Firestore integration
 
-## Getting Started
+## Prerequisites
+- Flutter SDK
+- Firebase project
+- Android/iOS device
 
-This project is a starting point for a Flutter application.
+## Setup
+1. Clone repository
+2. Run `flutter pub get`
+3. Configure Firebase
+4. Run `flutter run`
 
-A few resources to get you started if this is your first Flutter project:
+## Dependencies
+- flutter_background_service
+- cloud_firestore
+- geolocator
+- firebase_core
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Usage
+- Tap play button to start tracking
+- App continues tracking location
+  
+## Permissions
+Requires location permissions on Android/iOS
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Note
+Ensure proper location settings and Firebase configuration
