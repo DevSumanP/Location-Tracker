@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
 import 'package:location_tracker/firebase_options.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,8 @@ void main() async {
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
+  await Geolocator.requestPermission();
+  requestNotificationPermission();
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
@@ -32,6 +35,12 @@ Future<void> initializeService() async {
       onForeground: onStart,
     ),
   );
+}
+
+Future<void> requestNotificationPermission() async {
+  if (await Permission.notification.isDenied) {
+    await Permission.notification.request();
+  }
 }
 
 @pragma('vm:entry-point')
@@ -146,7 +155,6 @@ class _LocationTrackerPageState extends State<LocationTrackerPage>
   }
 
   Future<void> startLocationTracking() async {
-    await Geolocator.requestPermission();
     await service.startService();
     setState(() {
       isTracking = true;
