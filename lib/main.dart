@@ -15,17 +15,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await initializeService();
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
-  await Future.wait([
-    Geolocator.requestPermission(),
-    requestNotificationPermission(),
-    Permission.scheduleExactAlarm.request(),
-  ]);
-
+  await Geolocator.requestPermission();
+  requestNotificationPermission();
+  if (await Permission.scheduleExactAlarm.isDenied) {
+    await Permission.scheduleExactAlarm.request();
+  }
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
@@ -107,8 +106,6 @@ Future<void> onStart(ServiceInstance service) async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
